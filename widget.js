@@ -586,44 +586,33 @@ class PythonFormulaEditor extends HTMLElement {
     if (!this._state._widgetBase) {
       let discoveredSrc = '';
 
-      /* 1. Performance API (The Gold Standard)
-         Filter out common SAP system scripts like 'jquery-ui-widget.js' or 'api-widget.js' */
+      /* 1. Performance API - Surgical Search
+         SAC loads widgets with a specific ?widgetId=... parameter. 
+         We look specifically for OUR id: sdk_com_custom_pythoneditor */
       try {
         const resources = performance.getEntriesByType('resource');
         const widgetEntry = resources.reverse().find(r => {
           const n = (r.name || '').toLowerCase();
-          /* Skip SAP system scripts that might contain 'widget.js' */
-          if (n.includes('jquery') || n.includes('sapui5') || n.includes('hana.ondemand.com')) return false;
-          if (n.includes('assets.sapanalytics.cloud') || n.includes('/uiassets/')) return false;
-          
-          /* Look for our specific ID or the specific filename at the end of a path */
-          return n.includes('com.custom.pythoneditor') || n.endsWith('/widget.js') || n.includes('/widget.js?');
+          return n.includes('sdk_com_custom_pythoneditor') || n.includes('com.custom.pythoneditor');
         });
         if (widgetEntry) discoveredSrc = widgetEntry.name;
       } catch (e) {}
 
-      /* 2. Fallback: Search for our script tag by literal tag name */
+      /* 2. Tag-based fallback */
       if (!discoveredSrc) {
         const sc = Array.from(document.getElementsByTagName('script')).find(s => 
-          s.src && s.src.includes('com.custom.pythoneditor')
+          s.src && (s.src.includes('sdk_com_custom_pythoneditor') || s.src.includes('com.custom.pythoneditor'))
         );
         if (sc) discoveredSrc = sc.src;
       }
 
-      /* 3. Fallback: CurrentScript */
-      if (!discoveredSrc && document.currentScript && document.currentScript.src) {
-        discoveredSrc = document.currentScript.src;
-      }
-
       if (discoveredSrc && discoveredSrc.includes('://')) {
-        /* Extract base path, stripping query parameters if present (common in SAC) */
-        const urlObj = new URL(discoveredSrc);
-        const path   = urlObj.pathname;
-        const base   = urlObj.origin + path.substring(0, path.lastIndexOf('/') + 1);
-        this._state._widgetBase = base;
-        console.log('PFE: Successfully discovered widget base:', base);
+        /* Remove any query parameters (like ?version=...) and extract base path */
+        const cleanUrl = discoveredSrc.split('?')[0];
+        this._state._widgetBase = cleanUrl.substring(0, cleanUrl.lastIndexOf('/') + 1);
+        console.log('PFE: Final Corrected Base:', this._state._widgetBase);
       } else {
-        /* Last resort fallback */
+        /* Final fallback to origin root */
         this._state._widgetBase = window.location.origin + '/';
       }
     }
