@@ -1,0 +1,217 @@
+{
+  "id": "com.custom.pythoneditor",
+  "version": "1.0.0",
+  "name": "Python Formula Editor",
+  "description": "Advanced Python formula editor powered by Pyodide (WASM). Supports pandas DataFrames from multiple SAC models, SAC variable injection, scoped filtering, compiled-code caching, and writeback to Planning Models.",
+  "newInstancePrefix": "PythonEditor",
+  "icon": "icon.png",
+  "vendor": "Ergin Ozturk",
+  "eula": "",
+  "license": "Apache-2.0",
+  "webcomponents": [
+    {
+      "kind": "main",
+      "tag": "com-custom-pythoneditor",
+      "url": "/widget.js",
+      "integrity": "",
+      "ignoreIntegrity": true
+    }
+  ],
+  "properties": {
+    "scriptStorage": {
+      "type": "string",
+      "default": "{}",
+      "description": "JSON map of { [functionId]: { script, description, lastModified } }. Persisted in the SAC story property so scripts travel with the story."
+    },
+    "activeFunctionId": {
+      "type": "string",
+      "default": "",
+      "description": "The Function ID currently loaded in the editor."
+    },
+    "mode": {
+      "type": "string",
+      "default": "debug",
+      "description": "Execution mode. 'debug' → results shown in output panel. 'production' → results written back to SAC Planning Model via setValue()."
+    },
+    "editorTheme": {
+      "type": "string",
+      "default": "vs-dark",
+      "description": "Monaco editor theme: 'vs', 'vs-dark', or 'hc-black'."
+    },
+    "showToolbar": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show or hide the toolbar row."
+    },
+    "showOutputPanel": {
+      "type": "boolean",
+      "default": true,
+      "description": "Show or hide the output panel."
+    },
+    "outputPanelHeight": {
+      "type": "number",
+      "default": 200,
+      "description": "Height of the output panel in pixels."
+    },
+    "autoRunOnDataChange": {
+      "type": "boolean",
+      "default": false,
+      "description": "Re-execute the active script automatically when a bound data source changes."
+    },
+    "pyodideVersion": {
+      "type": "string",
+      "default": "0.26.4",
+      "description": "Pyodide version loaded from CDN. Pin to a specific version for reproducibility."
+    },
+    "bindingAliases": {
+      "type": "string",
+      "default": "{}",
+      "description": "JSON map { [slotName]: pythonVarName } to rename dataBinding1..5 inside Python scripts. E.g. {\"dataBinding1\":\"sales\",\"dataBinding2\":\"budget\"}."
+    },
+    "pyodideBaseURL": {
+      "type": "string",
+      "default": "https://ozturkergin.github.io/SAC_Pyodide/dist-assets/pyodide/",
+      "description": "Base URL for Pyodide WASM and packages. Points to your GitHub repository by default."
+    },
+    "monacoBaseURL": {
+      "type": "string",
+      "default": "https://ozturkergin.github.io/SAC_Pyodide/dist-assets/monaco/vs/",
+      "description": "Override URL for Monaco Editor files. Points to your GitHub repository by default."
+    },
+    "testMode": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable test mode. The 🧪 Test button runs the script against testFixtures mock data instead of live SAC bindings. Results are never written back to the planning model in test mode."
+    },
+    "testFixtures": {
+      "type": "string",
+      "default": "{}",
+      "description": "JSON test fixtures used by test mode. Format: { \"dataBinding1\": [{...rows}], \"dataBinding2\": [{...rows}], \"variables\": { \"VAR_NAME\": \"value\" } }"
+    }
+  },
+  "dataBindings": {
+    "dataBinding1": {
+      "feeds": [
+        { "id": "dimensions1", "description": "Dimensions – Model 1", "type": "dimension" },
+        { "id": "measures1",   "description": "Key Figures – Model 1", "type": "mainStructureMember" }
+      ]
+    },
+    "dataBinding2": {
+      "feeds": [
+        { "id": "dimensions2", "description": "Dimensions – Model 2", "type": "dimension" },
+        { "id": "measures2",   "description": "Key Figures – Model 2", "type": "mainStructureMember" }
+      ]
+    },
+    "dataBinding3": {
+      "feeds": [
+        { "id": "dimensions3", "description": "Dimensions – Model 3", "type": "dimension" },
+        { "id": "measures3",   "description": "Key Figures – Model 3", "type": "mainStructureMember" }
+      ]
+    },
+    "dataBinding4": {
+      "feeds": [
+        { "id": "dimensions4", "description": "Dimensions – Model 4", "type": "dimension" },
+        { "id": "measures4",   "description": "Key Figures – Model 4", "type": "mainStructureMember" }
+      ]
+    },
+    "dataBinding5": {
+      "feeds": [
+        { "id": "dimensions5", "description": "Dimensions – Model 5", "type": "dimension" },
+        { "id": "measures5",   "description": "Key Figures – Model 5", "type": "mainStructureMember" }
+      ]
+    }
+  },
+  "methods": {
+    "getScriptById": {
+      "description": "Returns the stored script string for the given Function ID, or null if not found.",
+      "parameters": [
+        { "name": "id", "type": "string" }
+      ]
+    },
+    "saveScript": {
+      "description": "Persists a script under the given Function ID in scriptStorage. Fires onScriptSaved.",
+      "parameters": [
+        { "name": "id",          "type": "string" },
+        { "name": "script",      "type": "string" },
+        { "name": "description", "type": "string" }
+      ]
+    },
+    "executeScript": {
+      "description": "Executes the script for the given Function ID. Defaults to activeFunctionId if omitted.",
+      "parameters": [
+        { "name": "scriptId", "type": "string" }
+      ]
+    },
+    "getResult": {
+      "description": "Returns the result map from the last execution as a JSON string."
+    },
+    "setFilter": {
+      "description": "Applies an SAC-side filter on the named binding slot. members is a comma-separated string of member IDs.",
+      "parameters": [
+        { "name": "bindingId",  "type": "string" },
+        { "name": "dimension",  "type": "string" },
+        { "name": "members",    "type": "string" }
+      ]
+    },
+    "clearResults": {
+      "description": "Clears the output panel content and the internal last-result map."
+    },
+    "getVariable": {
+      "description": "Returns the current value of an SAC input variable by name.",
+      "parameters": [
+        { "name": "name", "type": "string" }
+      ]
+    },
+    "setVariable": {
+      "description": "Sets an SAC input variable value and fires onVariableChanged.",
+      "parameters": [
+        { "name": "name",  "type": "string" },
+        { "name": "value", "type": "string" }
+      ]
+    },
+    "getAllFunctionIds": {
+      "description": "Returns a JSON string (array) of all stored Function IDs."
+    },
+    "setMode": {
+      "description": "Sets execution mode to 'debug' or 'production' and updates the UI badge.",
+      "parameters": [
+        { "name": "mode", "type": "string" }
+      ]
+    },
+    "runTest": {
+      "description": "Runs the script in test mode using testFixtures data. Never writes back to planning model.",
+      "parameters": [
+        { "name": "scriptId", "type": "string" }
+      ]
+    },
+    "getTestFixtures": {
+      "description": "Returns the current testFixtures JSON string."
+    },
+    "setTestFixtures": {
+      "description": "Sets the testFixtures property from a JSON string.",
+      "parameters": [
+        { "name": "json", "type": "string" }
+      ]
+    }
+  },
+  "events": {
+    "onCalculationComplete": {
+      "description": "Fired when a Python script completes successfully. Detail: { functionId, resultCount, durationMs }."
+    },
+    "onCalculationError": {
+      "description": "Fired when a Python script throws an exception. Detail: { functionId, error, lineNumber }."
+    },
+    "onScriptSaved": {
+      "description": "Fired when saveScript() persists a script. Detail: { functionId }."
+    },
+    "onVariableChanged": {
+      "description": "Fired when setVariable() is called. Detail: { name, value }."
+    },
+    "onTestComplete": {
+      "description": "Fired when a test-mode execution completes. Detail: { functionId, passed, failCount, resultCount, durationMs }."
+    },
+    "onTestError": {
+      "description": "Fired when a test-mode execution throws. Detail: { functionId, error, lineNumber }."
+    }
+  }
+}
