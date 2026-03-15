@@ -584,41 +584,85 @@ class PythonFormulaEditor extends HTMLElement {
    *  is served from any URL (SAC CDN, local dev server, etc.). */
   _resolveWidgetUrl(relativePath) {
     if (!this._state._widgetBase) {
-      let discoveredSrc = '';
-
-      /* 1. Performance API - Surgical Search
-         SAC loads widgets with a specific ?widgetId=... parameter. 
-         We look specifically for OUR id: sdk_com_custom_pythoneditor */
-      try {
-        const resources = performance.getEntriesByType('resource');
-        const widgetEntry = resources.reverse().find(r => {
-          const n = (r.name || '').toLowerCase();
-          return n.includes('sdk_com_custom_pythoneditor') || n.includes('com.custom.pythoneditor');
-        });
-        if (widgetEntry) discoveredSrc = widgetEntry.name;
-      } catch (e) {}
-
-      /* 2. Tag-based fallback */
-      if (!discoveredSrc) {
-        const sc = Array.from(document.getElementsByTagName('script')).find(s => 
-          s.src && (s.src.includes('sdk_com_custom_pythoneditor') || s.src.includes('com.custom.pythoneditor'))
-        );
-        if (sc) discoveredSrc = sc.src;
-      }
-
-      if (discoveredSrc && discoveredSrc.includes('://')) {
-        /* Remove any query parameters (like ?version=...) and extract base path */
-        const cleanUrl = discoveredSrc.split('?')[0];
-        this._state._widgetBase = cleanUrl.substring(0, cleanUrl.lastIndexOf('/') + 1);
-        console.log('PFE: Final Corrected Base:', this._state._widgetBase);
+      /* 0. Explicit override — set widgetBaseURL property in SAC Designer to skip auto-detection */
+      const manualBase = this.widgetBaseURL && this.widgetBaseURL.trim();
+      if (manualBase) {
+        this._state._widgetBase = manualBase.endsWith('/') ? manualBase : manualBase + '/';
+        console.log('PFE: Using widgetBaseURL override:', this._state._widgetBase);
       } else {
-        /* Final fallback to origin root */
-        this._state._widgetBase = window.location.origin + '/';
+        let discoveredSrc = '';
+
+        /* 1. Performance API — search for our widget ID */
+        try {
+          const resources = performance.getEntriesByType('resource');
+          const widgetEntry = resources.reverse().find(r => {
+            const n = (r.name || '').toLowerCase();
+            return n.includes('sdk_com_custom_pythoneditor') || n.includes('com.custom.pythoneditor');
+          });
+          if (widgetEntry) discoveredSrc = widgetEntry.name;
+        } catch (e) {}
+
+        /* 2. Performance API — any resource ending with /widget.js (local dev server) */
+        if (!discoveredSrc) {
+          try {
+            const resources = performance.getEntriesByType('resource');
+            const widgetEntry = resources.reverse().find(r => {
+              const path = (r.name || '').split('?')[0];
+              return path.endsWith('/widget.js');
+            });
+            if (widgetEntry) discoveredSrc = widgetEntry.name;
+          } catch (e) {}
+        }
+
+        /* 3. Script tag — by widget ID */
+        if (!discoveredSrc) {
+          const sc = Array.from(document.getElementsByTagName('script')).find(s =>
+            s.src && (s.src.includes('sdk_com_custom_pythoneditor') || s.src.includes('com.custom.pythoneditor'))
+          );
+          if (sc) discoveredSrc = sc.src;
+        }
+
+        /* 4. Script tag — any script ending with /widget.js */
+        if (!discoveredSrc) {
+          const sc = Array.from(document.getElementsByTagName('script')).find(s => {
+            const path = (s.src || '').split('?')[0];
+            return path.endsWith('/widget.js');
+          });
+          if (sc) discoveredSrc = sc.src;
+        }
+
+        if (discoveredSrc && discoveredSrc.includes('://')) {
+          /* SAC REST pattern: .../customWidgetComponent?widgetId=...&componentKind=main
+             The "base" can't be a simple directory — store the full discovered URL so
+             _workerUrl() can reconstruct the per-file endpoint. */
+          this._state._widgetBase = discoveredSrc;
+          console.log('PFE: Discovered Base:', discoveredSrc);
+        } else {
+          this._state._widgetBase = window.location.origin + '/';
+          console.warn('PFE: Could not discover widget base URL. Set the widgetBaseURL property explicitly.');
+        }
       }
     }
-    
+
+    const base = this._state._widgetBase;
+
+    /* SAC REST endpoint pattern — reconstruct URL using componentKind parameter */
+    if (base.includes('customWidgetComponent')) {
+      const url = new URL(base);
+      /* Replace componentKind=main with the file-specific kind derived from the filename */
+      const file = relativePath.replace(/^\//, '').replace(/^.*\//, ''); /* basename */
+      if (file === WORKER_FILE) {
+        url.searchParams.set('componentKind', 'worker');
+        return url.toString();
+      }
+      /* For any other file (vendor/*, etc.) fall through to widgetBaseURL or warn */
+      console.warn(`PFE: Cannot resolve "${relativePath}" via SAC REST endpoint. Set widgetBaseURL to an external host.`);
+      return relativePath;
+    }
+
+    /* Standard directory base */
     try {
-      return new URL(relativePath, this._state._widgetBase).href;
+      return new URL(relativePath, base).href;
     } catch (e) {
       return relativePath;
     }
