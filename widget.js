@@ -587,39 +587,44 @@ class PythonFormulaEditor extends HTMLElement {
       let discoveredSrc = '';
 
       /* 1. Performance API (The Gold Standard)
-         Ask the browser for all successfully loaded scripts and find our name. */
+         Filter out common SAP system scripts like 'jquery-ui-widget.js' or 'api-widget.js' */
       try {
         const resources = performance.getEntriesByType('resource');
-        const widgetEntry = resources.find(r => (
-          r.name && (r.name.includes('widget.js') || r.name.includes('com.custom.pythoneditor'))
-        ));
+        const widgetEntry = resources.reverse().find(r => {
+          const n = (r.name || '').toLowerCase();
+          /* Skip SAP system scripts that might contain 'widget.js' */
+          if (n.includes('jquery') || n.includes('sapui5') || n.includes('hana.ondemand.com')) return false;
+          if (n.includes('assets.sapanalytics.cloud') || n.includes('/uiassets/')) return false;
+          
+          /* Look for our specific ID or the specific filename at the end of a path */
+          return n.includes('com.custom.pythoneditor') || n.endsWith('/widget.js') || n.includes('/widget.js?');
+        });
         if (widgetEntry) discoveredSrc = widgetEntry.name;
       } catch (e) {}
 
-      /* 2. Fallback to currentScript */
+      /* 2. Fallback: Search for our script tag by literal tag name */
+      if (!discoveredSrc) {
+        const sc = Array.from(document.getElementsByTagName('script')).find(s => 
+          s.src && s.src.includes('com.custom.pythoneditor')
+        );
+        if (sc) discoveredSrc = sc.src;
+      }
+
+      /* 3. Fallback: CurrentScript */
       if (!discoveredSrc && document.currentScript && document.currentScript.src) {
         discoveredSrc = document.currentScript.src;
       }
 
-      /* 3. Fallback to stack trace */
-      if (!discoveredSrc) {
-        try {
-          const stack = new Error().stack || '';
-          const matches = stack.match(/(https?:\/\/[^ ]+\.js)/g) || [];
-          discoveredSrc = matches.find(s => (
-            s.includes('widget.js') && !s.includes('sapanalytics.cloud')
-          )) || '';
-        } catch (e) {}
-      }
-
       if (discoveredSrc && discoveredSrc.includes('://')) {
-        /* Success: We have an absolute URL */
-        this._state._widgetBase = discoveredSrc.substring(0, discoveredSrc.lastIndexOf('/') + 1);
-        console.log('PFE: Resource Discovery Success:', this._state._widgetBase);
+        /* Extract base path, stripping query parameters if present (common in SAC) */
+        const urlObj = new URL(discoveredSrc);
+        const path   = urlObj.pathname;
+        const base   = urlObj.origin + path.substring(0, path.lastIndexOf('/') + 1);
+        this._state._widgetBase = base;
+        console.log('PFE: Successfully discovered widget base:', base);
       } else {
-        /* Failure: Fallback to domain root (often fails in SAC, but last resort) */
+        /* Last resort fallback */
         this._state._widgetBase = window.location.origin + '/';
-        console.warn('PFE: URL Discovery failed, falling back to origin root.');
       }
     }
     
