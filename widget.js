@@ -586,39 +586,40 @@ class PythonFormulaEditor extends HTMLElement {
     if (!this._state._widgetBase) {
       let discoveredSrc = '';
 
-      /* 1. Try standard currentScript */
-      if (document.currentScript && document.currentScript.src) {
+      /* 1. Performance API (The Gold Standard)
+         Ask the browser for all successfully loaded scripts and find our name. */
+      try {
+        const resources = performance.getEntriesByType('resource');
+        const widgetEntry = resources.find(r => (
+          r.name && (r.name.includes('widget.js') || r.name.includes('com.custom.pythoneditor'))
+        ));
+        if (widgetEntry) discoveredSrc = widgetEntry.name;
+      } catch (e) {}
+
+      /* 2. Fallback to currentScript */
+      if (!discoveredSrc && document.currentScript && document.currentScript.src) {
         discoveredSrc = document.currentScript.src;
       }
 
-      /* 2. Search for the specific script tag in the page */
-      if (!discoveredSrc) {
-        const scripts = Array.from(document.getElementsByTagName('script'));
-        const widgetScript = scripts.find(s => (
-          s.src && (s.src.includes('widget.js') || s.src.includes('com.custom.pythoneditor'))
-        ));
-        if (widgetScript) discoveredSrc = widgetScript.src;
-      }
-
-      /* 3. Stack trace fallback (filtering out SAP system domains) */
+      /* 3. Fallback to stack trace */
       if (!discoveredSrc) {
         try {
           const stack = new Error().stack || '';
           const matches = stack.match(/(https?:\/\/[^ ]+\.js)/g) || [];
           discoveredSrc = matches.find(s => (
-            s.includes('widget.js') && 
-            !s.includes('assets.sapanalytics.cloud') && 
-            !s.includes('hcs.cloud.sap')
+            s.includes('widget.js') && !s.includes('sapanalytics.cloud')
           )) || '';
         } catch (e) {}
       }
 
       if (discoveredSrc && discoveredSrc.includes('://')) {
+        /* Success: We have an absolute URL */
         this._state._widgetBase = discoveredSrc.substring(0, discoveredSrc.lastIndexOf('/') + 1);
-        console.log('PFE: Discovered base path:', this._state._widgetBase);
+        console.log('PFE: Resource Discovery Success:', this._state._widgetBase);
       } else {
-        /* Last resort: the story origin */
+        /* Failure: Fallback to domain root (often fails in SAC, but last resort) */
         this._state._widgetBase = window.location.origin + '/';
+        console.warn('PFE: URL Discovery failed, falling back to origin root.');
       }
     }
     
